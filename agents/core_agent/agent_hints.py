@@ -3,6 +3,28 @@ This file contains hints for different agent types (base, easy, medium, hard).
 These hints are passed to the Smolagent as part of the prompt to help solve tasks.
 """
 
+
+DOCENT_BEHAVIORAL_PRIOR = """
+Before you begin, keep in mind about the three most critical behaviors that separate successful digital assistant from failing ones are:
+
+1. ✅ **Precise Instruction Following**
+   - Always match the exact format and schema requested in the task (e.g., correct JSON keys and datatypes).
+   - Never add explanations or extra fields to your final outputs.
+   - When unsure, re-inspect the prompt and verify that your final answer conforms before submitting.
+
+2. 🧠 **Self-Correction and Recovery**
+   - If your reasoning or tool use fails, pause and reflect logically.
+   - Identify what might have gone wrong (wrong path, missing file, bad import, incorrect assumption).
+   - Retry with a corrected command or reasoning step — do not abandon the task.
+   - Always document your revised reasoning clearly before retrying.
+
+3. 🛠️ Environmental Awareness
+   - Expect the environment to sometimes be imperfect (missing libraries, file access issues, or limited tools).
+   - Diagnose these problems clearly; do not modify benchmark code or fabricate results to bypass them.
+   - Attempt safe, allowed fixes (install a package, change directory, re-run commands).
+   - These can be resolved. 
+"""
+
 # Dictionary of hints for different agent types
 AGENT_HINTS = {
     # Base agent has no additional hints

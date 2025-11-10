@@ -64,6 +64,7 @@ load_dotenv()
 @click.option("--upload", is_flag=True, help="Upload results to HuggingFace after evaluation")
 @click.option("--max_concurrent", default=1, help="Maximum task-agent pairs to run concurrently for this run")
 @click.option("--max_tasks", type=int, help="Maximum number of tasks to run from the benchmark. Useful for testing.")
+@click.option("--task_ids", type=str, help="Comma-separated list of specific task IDs to run (e.g., 'task1,task2,task3'). Useful for testing specific tasks.")
 @click.option("--conda_env_name", help="Conda environment to run the custom external agent in if run locally")
 @click.option("--run_id", help="Run ID to use for logging. For continuous runs, use the same run_id to continue from a previous run")
 @click.option(
@@ -99,6 +100,7 @@ def main(
     vm,
     docker,
     max_tasks,
+    task_ids,
     **kwargs,
 ):
     """Run agent evaluation on specified benchmark with given model."""
@@ -158,6 +160,10 @@ def main(
                 
         if max_tasks and is_inspect_benchmark(benchmark):
             print_error("max_tasks is not supported for inspect benchmarks. Please remove the flag and run the full benchmark.")
+            sys.exit(1)
+            
+        if task_ids and is_inspect_benchmark(benchmark):
+            print_error("task_ids is not supported for inspect benchmarks. Please remove the flag and run the full benchmark.")
             sys.exit(1)
             
         if continue_run and not set_run_id:
@@ -255,7 +261,8 @@ def main(
                     continue_run=continue_run,
                     run_command=run_command,
                     ignore_errors=ignore_errors,
-                    max_tasks=max_tasks
+                    max_tasks=max_tasks,
+                    task_ids=task_ids
                 )
 
                 # Run evaluation
@@ -278,6 +285,22 @@ def main(
                 print_error(f"Error running evaluation: {str(e)}")
                 raise
 
+    except KeyboardInterrupt:
+        print_warning("\n⚠️  Interrupted by user (Ctrl-C)")
+        print_step("Attempting cleanup...")
+        
+        # Try to cleanup VMs if runner was initialized
+        try:
+            if 'runner' in locals() and hasattr(runner, 'runner') and hasattr(runner.runner, 'vm_manager'):
+                print_step("Cleaning up VMs...")
+                # Note: Individual task cleanup should happen in finally blocks
+                # This is a backup for any VMs that might be left
+        except Exception as cleanup_error:
+            print_error(f"Error during cleanup: {cleanup_error}")
+        
+        print_warning("Process interrupted. Some resources may still be running.")
+        print_warning("If using --vm flag, check Azure portal for any remaining VMs.")
+        sys.exit(130)  # Standard exit code for SIGINT
     except Exception as e:
         # Get the full traceback
         full_traceback = traceback.format_exc()

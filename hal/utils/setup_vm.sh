@@ -8,10 +8,16 @@ HOME_DIR="/home/$USERNAME"
 echo "Starting setup for user: $USERNAME"
 
 # Install system dependencies
-# echo "Installing system dependencies..."
-# apt-get update -y
-# apt-get install -y curl wget build-essential
-# echo "System dependencies installed"
+echo "Installing system dependencies..."
+apt-get update -y
+# Install SSL/curl/XML headers for CRAN packages
+apt-get install -y curl wget build-essential libssl-dev libcurl4-openssl-dev libxml2-dev
+echo "System dependencies installed"
+
+# Pre-install R base to avoid runtime installation overhead
+echo "Pre-installing R base..."
+DEBIAN_FRONTEND=noninteractive apt-get install -y r-base r-base-dev
+echo "R base installed"
 
 # Install Miniconda
 echo "Installing Miniconda..."

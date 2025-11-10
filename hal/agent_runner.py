@@ -30,7 +30,8 @@ class AgentRunner:
                  continue_run: bool = False,
                  run_command: str = None,
                  ignore_errors: bool = False,
-                 max_tasks: Optional[int] = None):
+                 max_tasks: Optional[int] = None,
+                 task_ids: Optional[str] = None):
         
         # Validate agent_function format
         if not isinstance(agent_function, str) or '.' not in agent_function:
@@ -110,6 +111,7 @@ class AgentRunner:
         self.continue_run = continue_run
         self.ignore_errors = ignore_errors
         self.max_tasks = max_tasks
+        self.task_ids = task_ids
         
 
     def get_remaining_tasks(self, dataset: Dict[str, Any]) -> Dict[str, Any]:
@@ -168,6 +170,23 @@ class AgentRunner:
         elif self.continue_run and self.ignore_errors:
             dataset = {}
             
+        # Filter by specific task IDs if provided
+        if self.task_ids:
+            requested_task_ids = [tid.strip() for tid in self.task_ids.split(",")]
+            available_task_ids = set(dataset.keys())
+            valid_task_ids = [tid for tid in requested_task_ids if tid in available_task_ids]
+            invalid_task_ids = [tid for tid in requested_task_ids if tid not in available_task_ids]
+            
+            if invalid_task_ids:
+                print_warning(f"The following task IDs were not found in the benchmark: {', '.join(invalid_task_ids)}")
+            
+            if valid_task_ids:
+                print_step(f"Filtering to {len(valid_task_ids)} specified task(s): {', '.join(valid_task_ids)}")
+                dataset = {task_id: dataset[task_id] for task_id in valid_task_ids}
+            else:
+                print_error("None of the specified task IDs were found in the benchmark. Exiting...")
+                sys.exit(1)
+        
         # Limit the number of tasks if max_tasks is specified
         if self.max_tasks and self.max_tasks > 0 and self.max_tasks < len(dataset):
             print_step(f"Limiting to the first {self.max_tasks} tasks as requested")

@@ -1,12 +1,17 @@
 FROM python:3.12-slim
 
-# Install system dependencies
+# Install system dependencies including R base for R capsule support
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     git \
     curl \
     ca-certificates \
     wget \
+    libssl-dev \
+    libcurl4-openssl-dev \
+    libxml2-dev \
+    r-base \
+    r-base-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Miniconda

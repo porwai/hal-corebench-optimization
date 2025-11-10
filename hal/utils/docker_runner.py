@@ -126,25 +126,32 @@ class DockerRunner:
                 tasks.append(task_coro)
             
             # Run tasks with concurrency control
-            results = await asyncio.gather(*tasks)
+            # Use return_exceptions=True to ensure cleanup happens even if tasks fail
+            results = await asyncio.gather(*tasks, return_exceptions=True)
             
             # Merge results
             merged_results = {}
             for result in results:
-                if result:
+                if result and isinstance(result, dict):
                     merged_results.update(result)
+                elif isinstance(result, Exception):
+                    # Log exception but don't add to results
+                    verbose_logger.debug(f"Task raised exception: {result}")
                     
             return merged_results
 
         finally:
             # Cleanup any remaining containers
-            for container_id in self._active_containers:
+            for container_id in self._active_containers[:]:  # Copy list to avoid modification during iteration
                 try:
                     container = self.docker_client.containers.get(container_id)
-                    # container.stop()
-                    # container.remove()
+                    container.stop(timeout=5)
+                    container.remove(force=True)
+                    verbose_logger.debug(f"Cleaned up container {container_id}")
                 except (docker.errors.NotFound, docker.errors.APIError) as e:
                     verbose_logger.debug(f"Warning: Failed to cleanup container {container_id}: {e}")
+                except Exception as e:
+                    verbose_logger.debug(f"Warning: Unexpected error cleaning up container {container_id}: {e}")
 
     async def _process_task(self,
                           task_id: str,

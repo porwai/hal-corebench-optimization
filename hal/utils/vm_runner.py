@@ -226,12 +226,21 @@ class VMRunner:
                 return {task_id: f"ERROR: {str(e)}"}
             
             finally:
-                # Cleanup VM
+                # Cleanup VM - ensure this runs even on cancellation
                 try:
                     print(f"Deleting VM {vm_name}")
                     await asyncio.to_thread(self.vm_manager.delete_vm, vm_name)
                     if progress and task is not None:
                         progress.update(task, advance=1)
+                except asyncio.CancelledError:
+                    # Re-raise to allow proper cancellation, but try cleanup first
+                    print(f"Task cancelled, attempting VM cleanup for {vm_name}...")
+                    try:
+                        await asyncio.to_thread(self.vm_manager.delete_vm, vm_name)
+                        print(f"✓ VM {vm_name} cleaned up despite cancellation")
+                    except Exception as cleanup_error:
+                        print(f"✗ Error cleaning up VM {vm_name} during cancellation: {cleanup_error}")
+                    raise
                 except Exception as e:
                     print(f"Error deleting VM {vm_name}: {e}")
 
@@ -247,13 +256,17 @@ class VMRunner:
                  for task_id, input_data in dataset.items()]
         
         # Run all tasks and gather results
-        results = await asyncio.gather(*tasks)
+        # Use return_exceptions=True to ensure all tasks complete cleanup even if some fail
+        results = await asyncio.gather(*tasks, return_exceptions=True)
         
         # Merge results
         merged_results = {}
         for result in results:
-            if result:
+            if result and isinstance(result, dict):
                 merged_results.update(result)
+            elif isinstance(result, Exception):
+                # Log exception but don't add to results
+                print_warning(f"Task raised exception: {result}")
 
         # Save raw submissions if log_dir provided
         if self.log_dir:

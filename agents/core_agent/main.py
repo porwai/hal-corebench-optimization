@@ -2,6 +2,7 @@ from typing import Optional, List, Dict, Any
 import tiktoken
 import subprocess
 from pathlib import Path
+import shutil
 import re
 import json
 import os
@@ -290,7 +291,11 @@ def query_vision_language_model(query: str, image_path: str) -> str:
 def execute_bash(command: str) -> str:
     """
     Description: Execute a bash command and return its output.
-    Will not execute commands requiring internet access.
+
+    Internet usage is permitted ONLY for CRAN package installation for R, and basic dependency installation required to run research capsules.
+
+    Do NOT use the internet for arbitrary web scraping, external API calls, or downloading artifacts from unknown remote servers.
+
     Common linux and python packages are available via apt and pip.
     Args:
         command: The bash command to execute
@@ -478,6 +483,236 @@ def file_content_search(query: str, exclude_pattern: Optional[str] = "*.pyc,*.gi
     except Exception as e:
         return f"Error searching files: {str(e)}"
 
+# --- minimal R bootstrap ----
+def ensure_R_minimal():
+    print("[R-MINIMAL] checking for Rscript...")
+    if shutil.which("Rscript") is not None:
+        print("[R-MINIMAL] Rscript already exists, skipping base install.")
+        return
+    
+    print("[R-MINIMAL] Rscript not found. Attempting minimal base R install via apt...")
+    
+    # Update package list (no sudo needed in Docker - containers run as root)
+    print("[R-MINIMAL] running: apt-get update -y")
+    proc = subprocess.run("apt-get update -y", shell=True, capture_output=True, text=True)
+    print(f"[R-MINIMAL] Exit code {proc.returncode}")
+    if proc.stdout: print(f"[R-MINIMAL][STDOUT]\n{proc.stdout}")
+    if proc.stderr: print(f"[R-MINIMAL][STDERR]\n{proc.stderr}")
+    
+    if proc.returncode != 0:
+        print("[R-MINIMAL] ERROR: apt-get update failed. Cannot proceed with R installation.")
+        return
+    
+    # Install R base (no sudo needed in Docker)
+    print("[R-MINIMAL] running: DEBIAN_FRONTEND=noninteractive apt-get install -y r-base")
+    proc = subprocess.run("DEBIAN_FRONTEND=noninteractive apt-get install -y r-base", shell=True, capture_output=True, text=True)
+    print(f"[R-MINIMAL] Exit code {proc.returncode}")
+    if proc.stdout: print(f"[R-MINIMAL][STDOUT]\n{proc.stdout}")
+    if proc.stderr: print(f"[R-MINIMAL][STDERR]\n{proc.stderr}")
+    
+    if proc.returncode != 0:
+        print("[R-MINIMAL] ERROR: R installation failed.")
+        return
+    
+    # Verify R installation succeeded
+    if shutil.which("Rscript") is not None:
+        print("[R-MINIMAL] R installation verified: Rscript is now available.")
+    else:
+        print("[R-MINIMAL] WARNING: R installation completed but Rscript not found in PATH.")
+    
+    print("[R-MINIMAL] completed attempt to install base R.")
+
+
+def maybe_install_lightweight_R_packages():
+    print("[R-LIGHT] scanning repo to see if R packages needed...")
+    
+    # Check if Rscript is available first
+    if shutil.which("Rscript") is None:
+        print("[R-LIGHT] Rscript not found. Skipping lightweight R package installation.")
+        return
+    
+    need_r = False
+    for root,_,files in os.walk("."):
+        for f in files:
+            if f.endswith(".Rmd") or f.endswith(".R"):
+                need_r = True
+                break
+
+    if not need_r:
+        print("[R-LIGHT] no R/Rmd detected. Skipping rmarkdown/tinytex install.")
+        return
+    
+    print("[R-LIGHT] R code detected. Ensuring rmarkdown + tinytex are present...")
+
+    # Use proper quote escaping: double quotes for shell, escaped single quotes for R strings
+    subprocess.run("mkdir -p ~/R/library", shell=True)
+    
+    cmds = [
+        'Rscript -e ".libPaths(c(\\"~/R/library\\", .libPaths())); if(!requireNamespace(\\"rmarkdown\\",quietly=TRUE)) install.packages(\\"rmarkdown\\",repos=\\"https://cloud.r-project.org\\",lib=\\"~/R/library\\")"',
+        'Rscript -e ".libPaths(c(\\"~/R/library\\", .libPaths())); if(!requireNamespace(\\"tinytex\\",quietly=TRUE)) install.packages(\\"tinytex\\",repos=\\"https://cloud.r-project.org\\",lib=\\"~/R/library\\")"'
+    ]
+    
+    for c in cmds:
+        print(f"[R-LIGHT] running: {c}")
+        proc = subprocess.run(c, shell=True, capture_output=True, text=True)
+        print(f"[R-LIGHT] Exit code {proc.returncode}")
+        if proc.stdout: print(f"[R-LIGHT][STDOUT]\n{proc.stdout}")
+        if proc.stderr: print(f"[R-LIGHT][STDERR]\n{proc.stderr}")
+        
+        if proc.returncode != 0:
+            print(f"[R-LIGHT] WARNING: Package installation command failed with exit code {proc.returncode}")
+
+    print("[R-LIGHT] completed lightweight R package ensure step.")
+
+BASE_R_PACKAGES = {
+    "stats","graphics","grDevices","utils","datasets","methods","base"
+}
+
+def ensure_cran_packages_installed(root=".", timeout_per_package=300):
+    """
+    Install CRAN packages detected in R files with optimized batch installation.
+    
+    Args:
+        root: Root directory to search for R files
+        timeout_per_package: Timeout in seconds for each package installation (default: 5 minutes)
+    
+    Returns:
+        bool: True if all packages installed successfully, False otherwise
+    """
+    # Check if Rscript is available first
+    if shutil.which("Rscript") is None:
+        print("[R-INSTALL] Rscript not found. Cannot install CRAN packages.")
+        return False
+    
+    r_files=[]
+    for dp,_,fs in os.walk(root):
+        for f in fs:
+            if f.endswith(".R") or f.endswith(".Rmd"):
+                r_files.append(os.path.join(dp,f))
+
+    if not r_files: 
+        print("[R-INSTALL] No R files found. Skipping CRAN package installation.")
+        return False
+
+    pkgs=set()
+    for f in r_files:
+        try:
+            txt=open(f,"r",encoding="utf8",errors="ignore").read()
+            # Improved regex: handles library/require with quotes, spaces, and package::function syntax
+            # Matches: library(pkg), library("pkg"), library('pkg'), require(pkg), pkg::function
+            # Pattern has two capturing groups: one for library/require, one for ::
+            found=re.findall(r'(?:library|require)\s*\(\s*(?:"|\')?([A-Za-z0-9_.]+)(?:"|\')?\s*\)|([A-Za-z0-9_.]+)::',txt)
+            for match in found:
+                # match is a tuple: (group1, group2)
+                # For library/require: group1 has package, group2 is empty
+                # For :: syntax: group1 is empty, group2 has package
+                p = match[0] or match[1]  # Get the non-empty group
+                if p and p not in BASE_R_PACKAGES:
+                    pkgs.add(p)
+        except Exception as e:
+            print(f"[R-INSTALL] WARNING: Error reading file {f}: {e}")
+            continue
+
+    if not pkgs: 
+        print("[R-INSTALL] No non-base R packages detected in R files.")
+        return False
+
+    print(f"[R-INSTALL] Detected {len(pkgs)} package(s) to install: {', '.join(sorted(pkgs))}")
+
+    subprocess.run("mkdir -p ~/R/library", shell=True)
+    
+    # Check which packages are already installed to avoid re-installation
+    installed_packages = set()
+    check_cmd = 'Rscript -e ".libPaths(c(\\"~/R/library\\", .libPaths())); cat(paste(installed.packages(lib.loc=c(\\"~/R/library\\", .libPaths()))[,1], collapse=\\",\\"))"'
+    try:
+        proc = subprocess.run(check_cmd, shell=True, capture_output=True, text=True, timeout=30)
+        if proc.returncode == 0 and proc.stdout.strip():
+            installed_packages = set(proc.stdout.strip().split(","))
+            print(f"[R-INSTALL] Found {len(installed_packages)} already installed package(s)")
+    except Exception as e:
+        print(f"[R-INSTALL] WARNING: Could not check installed packages: {e}")
+    
+    # Filter out already installed packages
+    packages_to_install = [p for p in pkgs if p not in installed_packages]
+    if not packages_to_install:
+        print(f"[R-INSTALL] All {len(pkgs)} package(s) are already installed. Skipping installation.")
+        return True
+    
+    print(f"[R-INSTALL] Installing {len(packages_to_install)} new package(s): {', '.join(sorted(packages_to_install))}")
+    
+    # Try batch installation first (faster for multiple packages)
+    if len(packages_to_install) > 1:
+        print("[R-INSTALL] Attempting batch installation of all packages...")
+        packages_str = ",".join([f'"{p}"' for p in packages_to_install])
+        batch_cmd = f'Rscript -e ".libPaths(c(\\"~/R/library\\", .libPaths())); install.packages(c({packages_str}), repos=\\"https://cloud.r-project.org\\", lib=\\"~/R/library\\", dependencies=TRUE)"'
+        
+        try:
+            proc = subprocess.run(batch_cmd, shell=True, capture_output=True, text=True, timeout=timeout_per_package * len(packages_to_install))
+            if proc.returncode == 0:
+                print(f"[R-INSTALL] Successfully installed all {len(packages_to_install)} package(s) in batch.")
+                return True
+            else:
+                print(f"[R-INSTALL] Batch installation failed (exit code {proc.returncode}), falling back to individual installation...")
+                if proc.stderr:
+                    print(f"[R-INSTALL][STDERR] {proc.stderr[:500]}")  # Limit output
+        except subprocess.TimeoutExpired:
+            print(f"[R-INSTALL] Batch installation timed out, falling back to individual installation...")
+        except Exception as e:
+            print(f"[R-INSTALL] Batch installation error: {e}, falling back to individual installation...")
+    
+    # Fall back to individual installation with timeout and retry logic
+    install_fail_count = 0
+    failed_packages = []
+    successful_packages = []
+    
+    for p in packages_to_install:
+        # Use proper quote escaping: double quotes for shell, escaped quotes for R strings
+        # Set libPaths to include user library, then install to user library
+        cmd = f'Rscript -e ".libPaths(c(\\"~/R/library\\", .libPaths())); install.packages(\\"{p}\\", repos=\\"https://cloud.r-project.org\\", lib=\\"~/R/library\\", dependencies=TRUE)"'
+        print(f"[R-INSTALL] Installing package: {p}")
+        
+        try:
+            proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout_per_package)
+            
+            if proc.returncode != 0:
+                install_fail_count += 1
+                failed_packages.append(p)
+                print(f"[R-INSTALL] Failed to install {p} (exit code {proc.returncode})")
+                if proc.stderr:
+                    # Show last 500 chars of stderr to avoid overwhelming output
+                    stderr_preview = proc.stderr[-500:] if len(proc.stderr) > 500 else proc.stderr
+                    print(f"[R-INSTALL][STDERR] {stderr_preview}")
+            else:
+                successful_packages.append(p)
+                print(f"[R-INSTALL] Successfully installed {p}")
+                
+        except subprocess.TimeoutExpired:
+            install_fail_count += 1
+            failed_packages.append(p)
+            print(f"[R-INSTALL] Timeout installing {p} (exceeded {timeout_per_package}s)")
+        except Exception as e:
+            install_fail_count += 1
+            failed_packages.append(p)
+            print(f"[R-INSTALL] Error installing {p}: {e}")
+
+        # More lenient early abort: only abort if more than 30% fail or 5+ packages fail
+        failure_rate = install_fail_count / len(packages_to_install) if packages_to_install else 0
+        if install_fail_count >= 5 or (len(packages_to_install) > 10 and failure_rate > 0.3):
+            print(f"[R-INSTALL] Early abort – {install_fail_count} package(s) failed ({failure_rate*100:.1f}% failure rate). Continuing with remaining packages may not be reliable.")
+            break
+    
+    if failed_packages:
+        print(f"[R-INSTALL] Completed with {len(failed_packages)} failure(s) out of {len(packages_to_install)}: {', '.join(failed_packages)}")
+        print(f"[R-INSTALL] Successfully installed {len(successful_packages)} package(s): {', '.join(successful_packages)}")
+        # Return False only if more than 50% failed
+        if len(failed_packages) > len(successful_packages):
+            return False
+        else:
+            print("[R-INSTALL] Continuing despite some failures (majority succeeded)")
+            return True
+    
+    print(f"[R-INSTALL] Successfully installed all {len(packages_to_install)} package(s).")
+    return True
 
 def run(input: dict[str, dict], **kwargs) -> dict[str, str]:
     # Print package versions and conda list output
@@ -498,6 +733,15 @@ def run(input: dict[str, dict], **kwargs) -> dict[str, str]:
         os.symlink(f'{cwd}/environment/results', '/results', target_is_directory=True)
     except Exception as e:
         print(f"[WARNING] Failed to create symbolic links for /data, /code, and /results: {str(e)}")
+
+    #* Normalize Environment for Core-Bench Hard
+    try:
+        ensure_R_minimal()
+        maybe_install_lightweight_R_packages()
+        ensure_cran_packages_installed()
+        print("[ENV] prep: minimal R and maybe install R packages")
+    except Exception as e:
+        print(f"[ENV][WARNING] prep failed, continuing: {e}")
 
     assert 'model_name' in kwargs, 'model_name is required'
     assert len(input) == 1, 'input must contain only one task'
