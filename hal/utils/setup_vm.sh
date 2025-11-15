@@ -11,7 +11,10 @@ echo "Starting setup for user: $USERNAME"
 echo "Installing system dependencies..."
 apt-get update -y
 # Install SSL/curl/XML headers for CRAN packages
-apt-get install -y curl wget build-essential libssl-dev libcurl4-openssl-dev libxml2-dev
+if ! apt-get install -y curl wget build-essential libssl-dev libcurl4-openssl-dev libxml2-dev; then
+    echo "ERROR: Failed to install system dependencies. Aborting setup."
+    exit 1
+fi
 echo "System dependencies installed"
 
 # Pre-install R base to avoid runtime installation overhead
