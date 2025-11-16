@@ -465,16 +465,30 @@ class VirtualMachineManager:
                 print(f"Setting up environment on VM {vm_name}")
                 _, stdout, stderr = ssh_client.exec_command(f"sudo bash {remote_setup_path} {username}")
                 
+                # Wait for command to complete and get output
+                stdout_output = stdout.read().decode()
+                stderr_output = stderr.read().decode()
+                
+                # Check exit status
+                exit_status = stdout.channel.recv_exit_status()
+                
                 # Create log file 
                 with open(f"{log_dir}/setup_vm_log_{task_id}.log", 'w') as f:
-                    f.write(stdout.read().decode())
-                    f.write(stderr.read().decode())
+                    f.write(stdout_output)
+                    f.write(stderr_output)
+                
+                # Raise exception if setup failed
+                if exit_status != 0:
+                    error_msg = f"VM setup failed with exit status {exit_status}. Check logs at {log_dir}/setup_vm_log_{task_id}.log"
+                    print(f"ERROR: {error_msg}")
+                    print(f"Setup stderr output: {stderr_output}")
+                    raise RuntimeError(error_msg)
                     
                 # Run setup script if it exists
                 if benchmark and benchmark.setup_script:
                     setup_script = os.path.join(benchmark.setup_script)
                     if os.path.exists(setup_script):
-                        print(f"Running setup script on VM {vm_name}")
+                        print(f"Running benchmark setup script on VM {vm_name}")
                         try:
                             cmd = f"""
                             source /home/{username}/miniconda3/etc/profile.d/conda.sh && \
@@ -482,11 +496,31 @@ class VirtualMachineManager:
                             bash setup_script.sh
                             """
                             _, stdout, stderr = ssh_client.exec_command(cmd)
+                            
+                            # Wait for command to complete and get output
+                            stdout_output = stdout.read().decode()
+                            stderr_output = stderr.read().decode()
+                            
+                            # Check exit status
+                            exit_status = stdout.channel.recv_exit_status()
+                            
+                            # Create log file
                             with open(f"{log_dir}/setup_script_log_{task_id}.log", 'w') as f:
-                                f.write(stdout.read().decode())
-                                f.write(stderr.read().decode())
+                                f.write(stdout_output)
+                                f.write(stderr_output)
+                            
+                            # Raise exception if benchmark setup failed
+                            if exit_status != 0:
+                                error_msg = f"Benchmark setup script failed with exit status {exit_status}. Check logs at {log_dir}/setup_script_log_{task_id}.log"
+                                print(f"ERROR: {error_msg}")
+                                print(f"Setup script stderr output: {stderr_output}")
+                                raise RuntimeError(error_msg)
+                        except RuntimeError:
+                            # Re-raise RuntimeError (setup failure)
+                            raise
                         except Exception as e:
-                            print(f"Error running setup script on VM {vm_name}: {e}")
+                            print(f"Error running benchmark setup script on VM {vm_name}: {e}")
+                            raise
                             
 
             finally:

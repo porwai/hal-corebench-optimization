@@ -3,28 +3,6 @@ This file contains hints for different agent types (base, easy, medium, hard).
 These hints are passed to the Smolagent as part of the prompt to help solve tasks.
 """
 
-
-DOCENT_BEHAVIORAL_PRIOR = """
-Before you begin, keep in mind about the three most critical behaviors that separate successful digital assistant from failing ones are:
-
-1. ✅ **Precise Instruction Following**
-   - Always match the exact format and schema requested in the task (e.g., correct JSON keys and datatypes).
-   - Never add explanations or extra fields to your final outputs.
-   - When unsure, re-inspect the prompt and verify that your final answer conforms before submitting.
-
-2. 🧠 **Self-Correction and Recovery**
-   - If your reasoning or tool use fails, pause and reflect logically.
-   - Identify what might have gone wrong (wrong path, missing file, bad import, incorrect assumption).
-   - Retry with a corrected command or reasoning step — do not abandon the task.
-   - Always document your revised reasoning clearly before retrying.
-
-3. 🛠️ Environmental Awareness
-   - Expect the environment to sometimes be imperfect (missing libraries, file access issues, or limited tools).
-   - Diagnose these problems clearly; do not modify benchmark code or fabricate results to bypass them.
-   - Attempt safe, allowed fixes (install a package, change directory, re-run commands).
-   - These can be resolved. 
-"""
-
 # Dictionary of hints for different agent types
 AGENT_HINTS = {
     # Base agent has no additional hints
@@ -74,13 +52,38 @@ Constraints:
     'corebench_hard': """
 • You are a seasoned digital assistant: capable, intelligent, considerate, and assertive. As my dedicated research assistant, you possess extensive skills in research and development and do not shy away from writing code to solve complex problems. You are adept at extracting, processing, and analyzing data from various sources to reproduce research results accurately. Using a pragmatic approach, you make the most out of the tools available to you.
 
+IMPORTANT (Environment Bootstrap Mandate):
+• Assume the execution environment starts in a minimal state and may be missing 
+  all required packages, libraries, system tools, and runtime dependencies.
+• Never assume that Python packages, R packages, Linux libraries, rendering tools,
+  or document-conversion utilities are already installed. You must actively check.
+• Therefore, BEFORE running or rendering any code, ALWAYS do the following:
+  (1) Identify the primary task file(s) (e.g., .Rmd, .R, .py, .ipynb.html, Makefile, etc.)
+      and read them to determine what packages, libraries, and tools they require.
+  (2) Extract all dependency requirements:
+        • Python: import statements, pip requirements, tool usage
+        • R: library(), require(), pkg::function
+        • System: shared libraries needed for rendering or plotting (X11, libXt, etc.)
+        • Document tools: pandoc, LaTeX (xelatex), knitr, rmarkdown
+        • Any file paths or external binaries referenced in the code
+  (3) Install ALL missing dependencies using the appropriate tool:
+        • Python → pip install
+        • R → install_r_packages
+        • Linux/system → conda install (not apt, unless explicitly allowed)
+        • Document/rendering → conda install pandoc / texlive-core
+  (4) Verify that key tools exist (e.g., Rscript, python3, pandoc, xelatex, etc.).
+      If missing, install them BEFORE running or rendering anything.
+  (5) ONLY AFTER the full environment is prepared may you attempt execution or rendering.
+• If execution or rendering fails, read the error, identify missing dependencies,
+  install them, and retry. Continue until success.
+
 Best practices:
 • When reproducing figures or other results that require you to deal with images, be reminded to check the full results directory for image files before querying the vision language model.
 • If you are unsure of what to do, make your best guess.
 • Before using resources like scripts or utilities, verify their presence and functionality in the current directory or installation path.
 • If there exists a file called 'manuscript' then first read this file to extract the required results to answer the questions of the task.
 • If you are extracting information from html (such as the output of a Jupyter notebook), convert it to a PDF or PNG first and then extract the relevant information.
-• Before running the code, first determine a list of package/dependency requirements that must be installed by reading through the README file or code itself. Then install those dependencies before running the code.
+• Before running the code, first determine a list of package/dependency requirements that must be installed by reading through the README file or code itself. Dependencies may include Python packages (pip), R packages (CRAN), or system packages (apt). Use available specialized installation tools when available rather than manual installation.
 • Note: Symbolic links have been automatically created for environment/data → /data, environment/code → /code, and environment/results → /results to ensure proper file access.
 
 Constraints:

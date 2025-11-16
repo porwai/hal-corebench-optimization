@@ -9,18 +9,35 @@ echo "Starting setup for user: $USERNAME"
 
 # Install system dependencies
 echo "Installing system dependencies..."
+export DEBIAN_FRONTEND=noninteractive
+
+# Ensure main repository is enabled and update package lists
+echo "Updating package lists..."
 apt-get update -y
-# Install SSL/curl/XML headers for CRAN packages
-if ! apt-get install -y curl wget build-essential libssl-dev libcurl4-openssl-dev libxml2-dev; then
+
+# Verify package lists were updated
+echo "Verifying package availability..."
+if ! apt-cache show build-essential > /dev/null 2>&1; then
+    echo "WARNING: build-essential not found in cache. Attempting to fix repositories..."
+    # Ensure main repository is enabled
+    sed -i 's/^# deb /deb /g' /etc/apt/sources.list
+    sed -i 's/^# deb-src /deb-src /g' /etc/apt/sources.list
+    apt-get update -y
+fi
+
+# Install SSL/curl/XML headers for CRAN packages (infrastructure-level build tools)
+echo "Installing packages: curl wget build-essential libssl-dev libcurl4-openssl-dev libxml2-dev"
+if ! apt-get install -y --fix-missing curl wget build-essential libssl-dev libcurl4-openssl-dev libxml2-dev; then
     echo "ERROR: Failed to install system dependencies. Aborting setup."
+    echo "Attempting to diagnose issue..."
+    apt-cache policy build-essential || true
+    apt-cache policy libssl-dev || true
     exit 1
 fi
 echo "System dependencies installed"
 
-# Pre-install R base to avoid runtime installation overhead
-echo "Pre-installing R base..."
-DEBIAN_FRONTEND=noninteractive apt-get install -y r-base r-base-dev
-echo "R base installed"
+# Note: R base is NOT pre-installed here to comply with CORE-Bench-Hard rules.
+# Agents must determine dependencies from README and install R themselves using install_r_base tool.
 
 # Install Miniconda
 echo "Installing Miniconda..."
