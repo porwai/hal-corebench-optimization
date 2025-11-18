@@ -18,6 +18,11 @@ class CoreBench(BaseBenchmark):
     def __init__(self, agent_dir: str, config: Dict[str, Any]):
         # Set benchmark_name in subclasses
         
+        # Set up benchmark-specific setup script (similar to appworld)
+        self.setup_script = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "corebench", "setup.sh"
+        )
+        
         # Load tasks from core_test.json
         core_test_path = os.path.join(os.path.dirname(__file__), "corebench", "core_test.json")
         
@@ -58,7 +63,7 @@ class CoreBench(BaseBenchmark):
             # Store results
             self.benchmark_answers[capsule_id] = task["results"]
             
-        super().__init__(agent_dir, config)
+        super().__init__(agent_dir, config, setup_script=self.setup_script)
     
     def _get_capsule_files_dict(self, capsule_dir: str) -> Dict[str, str]:
         """
