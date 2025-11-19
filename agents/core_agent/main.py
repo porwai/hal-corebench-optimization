@@ -9,7 +9,7 @@ import sys
 import ast
 from functools import partial
 from typing import Optional
-from smolagents import CodeAgent, tool, LiteLLMModel, DuckDuckGoSearchTool, Tool, PythonInterpreterTool, VisitWebpageTool
+from smolagents import CodeAgent, tool, DuckDuckGoSearchTool, Tool, PythonInterpreterTool, VisitWebpageTool
 from smolagents.models import MessageRole, Model
 from smolagents.agents import ActionStep
 
@@ -36,6 +36,9 @@ from mdconvert import MarkdownConverter, DocumentConverterResult
 # Import agent_hints using absolute path
 sys.path.append(os.path.dirname(__file__))
 from agent_hints import AGENT_HINTS
+
+# Import LiteLLMResponsesModel from utils
+from utils.litellm_responses_wrapper import LiteLLMResponsesModel
 
 import litellm
 
@@ -608,7 +611,7 @@ def run(input: dict[str, dict], **kwargs) -> dict[str, str]:
         # Non-fatal: if litellm is unavailable or wrapping fails, continue without provider pinning
         print(f"[WARNING] Failed to enable OpenRouter provider pinning: {e}")
 
-    model = LiteLLMModel(**model_params)
+    model = LiteLLMResponsesModel(**model_params)
     
     # Prepend hints to the task prompt if available
     prompt = task['prompt']
