@@ -2,23 +2,34 @@
 set -e  # Exit on error
 
 # Configuration
-USERNAME="$1"  # Pass username as first argument
+USERNAME="$1"
 HOME_DIR="/home/$USERNAME"
 
 echo "Starting setup for user: $USERNAME"
 
-# Install system dependencies
-echo "Installing system dependencies..."
+# === ADDITIVE: system deps needed for RMarkdown capsules ===
+echo "[ADD] Installing R system dependencies..."
+export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y \
-    curl wget build-essential \
-    libjpeg-dev libpng-dev libtiff-dev \
-    libcairo2 libcairo2-dev \
-    libxt6 libxrender1 libxext6 \
-    libfontconfig1
-echo "System dependencies installed"
+apt-get install -y --no-install-recommends \
+    r-base r-base-dev \
+    pandoc \
+    libssl-dev \
+    libcurl4-openssl-dev \
+    libxml2-dev \
+    libcairo2-dev \
+    libpng-dev \
+    libjpeg-dev \
+    libfreetype6-dev \
+    libharfbuzz-dev \
+    libfribidi-dev \
+    libtiff5 \
+    libxt6 \
+    fontconfig
+    
+echo "[ADD] R base + pandoc + header libs installed"
 
-# Install Miniconda
+# === Your original Miniconda section (unchanged) ===
 echo "Installing Miniconda..."
 MINICONDA_PATH="/home/$USERNAME/miniconda3"
 curl -o /tmp/miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
@@ -26,11 +37,9 @@ bash /tmp/miniconda.sh -b -p $MINICONDA_PATH
 rm /tmp/miniconda.sh
 echo "Miniconda installed"
 
-# Set ownership
 echo "Setting Miniconda ownership..."
 chown -R $USERNAME:$USERNAME $MINICONDA_PATH
 
-# Create conda initialization script
 echo "Creating conda initialization script..."
 cat > "$HOME_DIR/init_conda.sh" << EOF
 #!/bin/bash
@@ -44,11 +53,9 @@ if [ -f "\$HOME/.env" ]; then
 fi
 EOF
 
-# Make initialization script executable and set ownership
 chmod +x "$HOME_DIR/init_conda.sh"
 chown $USERNAME:$USERNAME "$HOME_DIR/init_conda.sh"
 
-# Create and activate environment as the agent user with explicit output
 echo "Creating conda environment..."
 su - $USERNAME -c "bash -c '\
     echo \"Initializing conda...\" && \
@@ -60,9 +67,9 @@ su - $USERNAME -c "bash -c '\
     conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
     conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r && \
     if [ -f requirements.txt ]; then \
-        PYTHON_VERSION=$(grep "^python==" requirements.txt | cut -d"=" -f3) && \
-        if [ ! -z "$PYTHON_VERSION" ]; then \
-            conda create -n agent_env python=$PYTHON_VERSION -y; \
+        PYTHON_VERSION=\$(grep \"^python==\" requirements.txt | cut -d\"=\" -f3) && \
+        if [ ! -z \"\$PYTHON_VERSION\" ]; then \
+            conda create -n agent_env python=\$PYTHON_VERSION -y; \
         else \
             conda create -n agent_env python=3.12 -y; \
         fi \

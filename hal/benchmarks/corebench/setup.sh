@@ -5,9 +5,7 @@ echo "Starting CORE-Bench-Hard minimal setup."
 echo "---"
 
 # Ensure conda-forge R + pandoc available inside agent_env
-echo "Installing minimal R + pandoc inside agent_env..."
-conda config --add channels conda-forge
-conda install -y -n agent_env r-base r-cairo pandoc
+echo "Checking for minimal R + pandoc inside agent_env..."
 
 echo "1. Checking interpreters:"
 command -v Rscript >/dev/null && echo "   ✅ Rscript available" || echo "   ❌ Rscript missing"

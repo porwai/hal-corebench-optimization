@@ -307,6 +307,16 @@ hal-eval --benchmark corebench_hard \
   -A model_name="openai/gpt-4.1-2025-04-14"
 ```
 
+- To run specific task capsules only:
+```bash
+hal-eval --benchmark corebench_hard \
+  --agent_dir agents/core_agent \
+  --agent_function main.run \
+  --agent_name "CORE-Agent" \
+  -A model_name="openai/gpt-4.1-2025-04-14" \
+  --task_ids capsule-2804717 --task_ids capsule-2414499
+```
+
 ### [ScienceAgentBench](https://github.com/osunlp/ScienceAgentBench)
 - Benchmark for evaluating agents' capabilities to solve real-world data-driven discovery tasks collected from scientific publications.
 - Tasks involve processing, modeling, analyzing, and visualizing scientific data from four disciplines.

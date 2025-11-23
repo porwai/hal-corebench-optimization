@@ -30,7 +30,8 @@ class AgentRunner:
                  continue_run: bool = False,
                  run_command: str = None,
                  ignore_errors: bool = False,
-                 max_tasks: Optional[int] = None):
+                 max_tasks: Optional[int] = None,
+                 task_ids: Optional[list] = None):
         
         # Validate agent_function format
         if not isinstance(agent_function, str) or '.' not in agent_function:
@@ -110,6 +111,7 @@ class AgentRunner:
         self.continue_run = continue_run
         self.ignore_errors = ignore_errors
         self.max_tasks = max_tasks
+        self.task_ids = task_ids
         
 
     def get_remaining_tasks(self, dataset: Dict[str, Any]) -> Dict[str, Any]:
@@ -167,9 +169,32 @@ class AgentRunner:
             dataset = self.get_remaining_tasks(dataset)
         elif self.continue_run and self.ignore_errors:
             dataset = {}
+        
+        # Filter by specific task IDs if provided
+        if self.task_ids:
+            print_step(f"Filtering to {len(self.task_ids)} specified task IDs: {', '.join(self.task_ids)}")
+            available_task_ids = set(dataset.keys())
+            requested_task_ids = set(self.task_ids)
             
-        # Limit the number of tasks if max_tasks is specified
-        if self.max_tasks and self.max_tasks > 0 and self.max_tasks < len(dataset):
+            # Check for invalid task IDs
+            invalid_task_ids = requested_task_ids - available_task_ids
+            if invalid_task_ids:
+                print_warning(f"Warning: The following task IDs were not found in the benchmark: {', '.join(invalid_task_ids)}")
+            
+            # Filter dataset to only include requested task IDs that exist
+            valid_task_ids = requested_task_ids & available_task_ids
+            if not valid_task_ids:
+                print_error("No valid task IDs found. Exiting...")
+                sys.exit(1)
+            
+            dataset = {task_id: dataset[task_id] for task_id in valid_task_ids}
+            print_step(f"Running {len(dataset)} task(s)")
+            
+            # Warn if max_tasks is also specified (task_ids takes precedence)
+            if self.max_tasks:
+                print_warning("Warning: --task_ids is specified, so --max_tasks will be ignored")
+        # Limit the number of tasks if max_tasks is specified (only if task_ids is not specified)
+        elif self.max_tasks and self.max_tasks > 0 and self.max_tasks < len(dataset):
             print_step(f"Limiting to the first {self.max_tasks} tasks as requested")
             task_ids = list(dataset.keys())[:self.max_tasks]
             dataset = {task_id: dataset[task_id] for task_id in task_ids}
