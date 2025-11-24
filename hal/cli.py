@@ -81,6 +81,12 @@ load_dotenv()
     type=str,
     help="One or more args to pass to inspect eval (e.g. -I token_limit=1000 -I model_args='{'temperature': 0.5}'"
 )
+@click.option(
+    "--task_ids",
+    multiple=True,
+    type=str,
+    help="One or more task IDs to run (e.g. --task_ids capsule-123 --task_ids capsule-456). If not specified, all tasks will be run."
+)
 def main(
     config,
     benchmark,
@@ -99,6 +105,7 @@ def main(
     vm,
     docker,
     max_tasks,
+    task_ids,
     **kwargs,
 ):
     """Run agent evaluation on specified benchmark with given model."""
@@ -255,7 +262,8 @@ def main(
                     continue_run=continue_run,
                     run_command=run_command,
                     ignore_errors=ignore_errors,
-                    max_tasks=max_tasks
+                    max_tasks=max_tasks,
+                    task_ids=list(task_ids) if task_ids else None
                 )
 
                 # Run evaluation
