@@ -290,7 +290,10 @@ def query_vision_language_model(query: str, image_path: str) -> str:
 def execute_bash(command: str) -> str:
     """
     Description: Execute a bash command and return its output.
-    Will not execute commands requiring internet access.
+do y    You should avoid arbitrary internet usage.
+    It is acceptable to use package managers (apt-get, pip, R's install.packages)
+    to install software dependencies from official repositories when required
+    to run the code in the current repository (for example, CRAN packages for R).
     Common linux and python packages are available via apt and pip.
     Args:
         command: The bash command to execute

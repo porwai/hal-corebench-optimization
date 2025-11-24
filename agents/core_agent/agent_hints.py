@@ -59,6 +59,20 @@ Best practices:
 • If there exists a file called 'manuscript' then first read this file to extract the required results to answer the questions of the task.
 • If you are extracting information from html (such as the output of a Jupyter notebook), convert it to a PDF or PNG first and then extract the relevant information.
 • Before running the code, first determine a list of package/dependency requirements that must be installed by reading through the README file or code itself. Then install those dependencies before running the code.
+• For repositories that use R / RMarkdown (files ending in .R or .Rmd), you MUST perform an explicit dependency-planning step BEFORE running any Rscript or rmarkdown::render:
+  - Use shell commands via the execute_bash tool (not ad-hoc Python imports) to list all .R/.Rmd files and extract all library(...) and require(...) calls.
+  - Deduplicate the package names into a single vector of packages.
+  - Then, in ONE non-interactive Rscript call, set a user library (for example, Sys.setenv(R_LIBS_USER="~/Rlibs"); dir.create(..., recursive=TRUE, showWarnings=FALSE); .libPaths(c(Sys.getenv("R_LIBS_USER"), .libPaths()))), compute the set of missing packages, and run install.packages(need, lib=Sys.getenv("R_LIBS_USER"), repos="https://cloud.r-project.org", dependencies=TRUE).
+  - Only after this single planned install.packages() step should you call rmarkdown::render() (or other R analysis scripts), so that missing-package errors are handled proactively instead of reactively.
+  - If rendering still fails and reports additional missing packages, update your planned package list and repeat the same single-call install sequence, rather than installing packages one-by-one after each failure.
+• To avoid quoting and syntax issues in R:
+  - If your R code is more than a short one-liner, DO NOT inline it in a long Rscript -e '...' shell string.
+  - Instead, use execute_bash to write the R code to a script file (for example, cat <<'EOF' > setup_deps.R ... EOF) and then run it with Rscript setup_deps.R.
+  - Reuse that pattern for complex renders or data-extraction logic rather than constructing deeply nested quotes.
+• When writing Python snippets that run inside the tool sandbox:
+  - Do NOT use open() or pathlib.Path to read files; these are often forbidden.
+  - Instead, read file contents via the provided tools: inspect_file_as_text (for text/CSV/HTML/PDF) or execute_bash with commands like cat, sed, head, etc., then parse the returned string.
+• When orchestrating these steps, prefer execute_bash and Rscript over complex Python scripts that import modules outside the authorized list; keep Python use minimal and rely on bash + R for environment setup.
 • Note: Symbolic links have been automatically created for environment/data → /data, environment/code → /code, and environment/results → /results to ensure proper file access.
 
 Constraints:

@@ -13,6 +13,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y --no-install-recommends \
     r-base r-base-dev \
+    build-essential gfortran \
     pandoc \
     libssl-dev \
     libcurl4-openssl-dev \
@@ -25,9 +26,10 @@ apt-get install -y --no-install-recommends \
     libfribidi-dev \
     libtiff5 \
     libxt6 \
-    fontconfig
-    
-echo "[ADD] R base + pandoc + header libs installed"
+    fontconfig \
+    libudunits2-0 libudunits2-dev
+
+echo "[ADD] R base + pandoc + header libs (including udunits2) installed"
 
 # === Your original Miniconda section (unchanged) ===
 echo "Installing Miniconda..."
