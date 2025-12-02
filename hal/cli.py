@@ -358,13 +358,33 @@ def is_inspect_solver(agent_function: str, agent_dir: str) -> bool:
 
 def validate_model_pricing(model_name: str) -> None:
     """Validate that model pricing information exists"""
-    from .utils.weave_utils import MODEL_PRICES_DICT
+    try:
+        from .utils.weave_utils import MODEL_PRICES_DICT
+    except Exception as e:
+        print_error(f"Failed to import MODEL_PRICES_DICT: {e}")
+        sys.exit(1)
     
     # together_ai is not part of weave model name
+    original_model_name = model_name
     model_name = model_name.replace("together_ai/", "")
     
+    # Debug output
+    print_step(f"Validating model: '{model_name}' (original: '{original_model_name}')")
+    print_step(f"Dictionary has {len(MODEL_PRICES_DICT)} models")
+    
     if model_name not in MODEL_PRICES_DICT:
-        print_error(f"Model '{model_name}' not found in pricing dictionary. Please add pricing information to MODEL_PRICES_DICT in weave_utils.py. Exiting...")
+        # Debug: Check for similar models
+        similar_models = [k for k in MODEL_PRICES_DICT.keys() if "claude-opus-4-5" in k.lower() or "opus-4-5" in k.lower()]
+        print_error(f"Model '{model_name}' not found in pricing dictionary.")
+        print_error(f"Original model name was: '{original_model_name}'")
+        if similar_models:
+            print_error(f"Similar models found: {similar_models}")
+        print_error(f"Total models in dictionary: {len(MODEL_PRICES_DICT)}")
+        # Check if it exists with different casing or whitespace
+        exact_match = [k for k in MODEL_PRICES_DICT.keys() if k.strip() == model_name.strip()]
+        if exact_match:
+            print_error(f"Found exact match after strip: {exact_match}")
+        print_error(f"Please add pricing information to MODEL_PRICES_DICT in weave_utils.py. Exiting...")
         sys.exit(1)
 
 

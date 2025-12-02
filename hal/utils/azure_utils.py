@@ -323,21 +323,26 @@ class VirtualMachineManager:
         # Copy files from the source directory to the VM
         # Compress the source directory
         source_directory = os.path.abspath(source_directory)
-        tar_file_path = f"{source_directory}.tar.gz"
-        with tarfile.open(tar_file_path, "w:gz") as tar:
-            tar.add(source_directory, arcname=os.path.basename(source_directory))
-        
-        # Copy the compressed file to the VM
-        remote_tar_file_path = f"/home/{username}/{os.path.basename(tar_file_path)}"
-        sftp_client.put(tar_file_path, remote_tar_file_path)
+        # Use unique tar file name to avoid race conditions when running multiple processes in parallel
+        tar_file_path = f"{source_directory}_{vm_name}.tar.gz"
+        try:
+            with tarfile.open(tar_file_path, "w:gz") as tar:
+                tar.add(source_directory, arcname=os.path.basename(source_directory))
+            
+            # Copy the compressed file to the VM
+            remote_tar_file_path = f"/home/{username}/{os.path.basename(tar_file_path)}"
+            sftp_client.put(tar_file_path, remote_tar_file_path)
 
-        # Extract the compressed file on the VM
-        _, stdout, _ = ssh_client.exec_command(f"tar -xzf {remote_tar_file_path} --strip-components=1 -C /home/{username}")
-        for _ in stdout: pass # Block until the tar command completes
+            # Extract the compressed file on the VM
+            _, stdout, _ = ssh_client.exec_command(f"tar -xzf {remote_tar_file_path} --strip-components=1 -C /home/{username}")
+            for _ in stdout: pass # Block until the tar command completes
 
-        # Remove the compressed file from the VM and the local machine
-        sftp_client.remove(remote_tar_file_path)
-        os.remove(tar_file_path)
+            # Remove the compressed file from the VM and the local machine
+            sftp_client.remove(remote_tar_file_path)
+        finally:
+            # Always try to remove the local tar file, but don't fail if it doesn't exist
+            if os.path.exists(tar_file_path):
+                os.remove(tar_file_path)
 
         # Close the SFTP client and SSH connection
         sftp_client.close()

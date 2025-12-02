@@ -203,27 +203,73 @@ class VMRunner:
 
                 if result is None:
                     print(f"Task {task_id} timed out after {timeout} seconds")
-                    return {task_id: f"TIMEOUT after {timeout} seconds"}
+                    result_dict = {task_id: f"TIMEOUT after {timeout} seconds"}
+                    # Write timeout to submissions file immediately (crash-safe)
+                    if self.log_dir:
+                        raw_submissions_path = os.path.join(self.log_dir, f"{run_id}_RAW_SUBMISSIONS.jsonl")
+                        async with self._file_lock:
+                            await asyncio.to_thread(
+                                self._append_to_submissions_file,
+                                raw_submissions_path,
+                                result_dict
+                            )
+                    return result_dict
 
                 # Copy results back
                 if self.log_dir:
-                    print(f"Copying results from VM {vm_name} to local directory")
-                    dest_dir = os.path.join(self.log_dir, f"{task_id}")
-                    os.makedirs(dest_dir, exist_ok=True)
-                    await asyncio.to_thread(
-                        self.vm_manager.copy_files_from_vm,
-                        vm_name=vm_name,
-                        username="agent",
-                        ssh_private_key_path=os.getenv("SSH_PRIVATE_KEY_PATH"),
-                        destination_directory=dest_dir
-                    )
+                    try:
+                        print(f"Copying results from VM {vm_name} to local directory")
+                        dest_dir = os.path.join(self.log_dir, f"{task_id}")
+                        os.makedirs(dest_dir, exist_ok=True)
+                        await asyncio.to_thread(
+                            self.vm_manager.copy_files_from_vm,
+                            vm_name=vm_name,
+                            username="agent",
+                            ssh_private_key_path=os.getenv("SSH_PRIVATE_KEY_PATH"),
+                            destination_directory=dest_dir
+                        )
+                    except Exception as copy_error:
+                        # VM might have been deleted already, but result is still valid
+                        print(f"Warning: Could not copy files from VM {vm_name}: {copy_error}")
+                        print(f"Task {task_id} completed successfully, but log files could not be copied")
+                    
+                    # Write result to RAW_SUBMISSIONS.jsonl immediately (crash-safe)
+                    # result from check_task_completion is already {task_id: response}, use it directly
+                    # Check if result is already wrapped with task_id to avoid double wrapping
+                    if isinstance(result, dict) and task_id in result and len(result) == 1:
+                        # Already wrapped correctly, use as-is
+                        result_dict = result
+                    else:
+                        # Not wrapped, wrap it
+                        result_dict = {task_id: result}
+                    raw_submissions_path = os.path.join(self.log_dir, f"{run_id}_RAW_SUBMISSIONS.jsonl")
+                    async with self._file_lock:
+                        await asyncio.to_thread(
+                            self._append_to_submissions_file,
+                            raw_submissions_path,
+                            result_dict
+                        )
 
-                return result
+                # Return in the same format as result_dict (already wrapped correctly)
+                return result_dict
 
             except Exception as e:
                 print(f"Error processing task {task_id} on VM {vm_name}: {e}")
                 traceback.print_exc()
-                return {task_id: f"ERROR: {str(e)}"}
+                error_result = {task_id: f"ERROR: {str(e)}"}
+                # Write error to submissions file immediately (crash-safe)
+                if self.log_dir:
+                    raw_submissions_path = os.path.join(self.log_dir, f"{run_id}_RAW_SUBMISSIONS.jsonl")
+                    try:
+                        async with self._file_lock:
+                            await asyncio.to_thread(
+                                self._append_to_submissions_file,
+                                raw_submissions_path,
+                                error_result
+                            )
+                    except Exception as write_error:
+                        print(f"Warning: Failed to write error result to submissions file: {write_error}")
+                return error_result
             
             finally:
                 # Cleanup VM
@@ -255,15 +301,15 @@ class VMRunner:
             if result:
                 merged_results.update(result)
 
-        # Save raw submissions if log_dir provided
-        if self.log_dir:
-            raw_submissions_path = os.path.join(self.log_dir, f"{run_id}_RAW_SUBMISSIONS.jsonl")
-            os.makedirs(self.log_dir, exist_ok=True)
-            
-            # append to submissions file
-            with open(raw_submissions_path, "a") as f:
-                for task_id, result in merged_results.items():
-                    json.dump({task_id: result}, f)
-                    f.write('\n')
-
+        # Note: Results are already written incrementally above, so we don't need to write again here
+        # This ensures crash-safety - if the process crashes, completed tasks are already saved
         return merged_results
+    
+    def _append_to_submissions_file(self, file_path: str, result: Dict[str, Any]):
+        """Thread-safe helper to append a result to RAW_SUBMISSIONS.jsonl"""
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "a") as f:
+            json.dump(result, f)
+            f.write('\n')
+            f.flush()  # Ensure data is written to disk immediately
+            os.fsync(f.fileno())  # Force OS to write to disk (crash-safe)

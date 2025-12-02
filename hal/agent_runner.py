@@ -133,8 +133,9 @@ class AgentRunner:
                         submission = json.loads(line.strip())
                         task_id = list(submission.keys())[0]
                         result = submission[task_id]
-                        # Only count as completed if not an error
-                        if not isinstance(result, str) or not result.startswith("ERROR"):
+                        # Only count as completed if not an error or timeout
+                        # Successful results are dicts, errors/timeouts are strings
+                        if isinstance(result, dict) or (isinstance(result, str) and not result.startswith("ERROR") and not result.startswith("TIMEOUT")):
                             completed_tasks.add(task_id)
                         previous_output.update(submission)
                     except json.JSONDecodeError as e:
@@ -147,6 +148,10 @@ class AgentRunner:
                 for task_id, data in dataset.items() 
                 if task_id not in completed_tasks
             }
+            
+            print_step(f"Found {len(completed_tasks)} completed tasks, {len(remaining_tasks)} remaining tasks to run")
+            if remaining_tasks:
+                print_step(f"Remaining task IDs: {', '.join(sorted(list(remaining_tasks.keys())[:10]))}{'...' if len(remaining_tasks) > 10 else ''}")
             
             return remaining_tasks
             
@@ -177,10 +182,16 @@ class AgentRunner:
         # delete previous calls from previous run if continuing for remaining tasks
         if self.continue_run and not self.ignore_errors:
             print_step("Cleaning up calls from previous run...")
-            for task_id in dataset:
-                call_ids = get_call_ids(task_id, weave_client)
-                if len(call_ids) > 0:
-                    delete_calls(call_ids, weave_client)
+            try:
+                for task_id in dataset:
+                    try:
+                        call_ids = get_call_ids(task_id, weave_client)
+                        if len(call_ids) > 0:
+                            delete_calls(call_ids, weave_client)
+                    except Exception as e:
+                        print_warning(f"Skipping Weave cleanup for {task_id} due to error: {e}")
+            except Exception as e:
+                print_warning(f"Skipping Weave cleanup due to error: {e}")
         
         if not dataset:
             print_warning("No remaining tasks to run")
